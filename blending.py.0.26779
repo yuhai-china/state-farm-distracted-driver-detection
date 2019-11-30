@@ -1,0 +1,198 @@
+'''
+#Train a simple deep CNN on the CIFAR10 small images dataset.
+
+It gets to 75% validation accuracy in 25 epochs, and 79% after 50 epochs.
+(it's still underfitting at that point, though).
+'''
+
+from __future__ import print_function
+import keras
+import pandas as pd
+from keras.preprocessing.image import ImageDataGenerator
+from keras.models import * #Sequential
+from keras.layers import * #Dense, Dropout, Activation, Flatten
+import os
+from keras.optimizers import *
+import math
+import datetime
+from keras.layers import BatchNormalization
+from keras.preprocessing.image import ImageDataGenerator
+from keras.applications.resnet_v2 import ResNet101V2
+raw = ResNet101V2(include_top=False,weights='imagenet',pooling='avg',input_shape=(224,224,3))
+
+batch_size = 32
+num_classes = 10
+epochs = 10
+data_augmentation = True
+save_dir = os.path.join(os.getcwd(), 'saved_models')
+model_name = 'densenet_trained_model.h5'
+import glob
+import numpy as np
+from numpy.random import permutation
+from keras.preprocessing import image
+
+import keras.backend as K
+from keras.utils.generic_utils import get_custom_objects
+
+def swish(x):
+    return (K.sigmoid(x) * x)
+
+get_custom_objects().update({'swish': Activation(swish)})
+
+def margin_loss(y_true, y_pred):
+    lamb, margin = 0.5, 0.1
+    return K.sum(y_true * K.square(K.relu(1 - margin - y_pred)) + lamb * (
+        1 - y_true) * K.square(K.relu(y_pred - margin)), axis=-1)
+
+def get_im(path, img_rows, img_cols, color_type=1):
+    # Load as grayscale
+    img = image.load_img(path, target_size=(img_rows, img_cols))
+    img = image.img_to_array(img)
+    return img
+
+def load_train(img_rows, img_cols, color_type=1):
+    X_train = []
+    y_train = []
+    print('Read train images')
+    for j in range(10):
+        print('Load folder c{}'.format(j))
+        path = os.path.join('..', 'input',  'train',
+                            'c' + str(j), '*.jpg')
+        print(path)
+        files = glob.glob(path)
+        for fl in files:
+            flbase = os.path.basename(fl)
+            img = get_im(fl, img_rows, img_cols, color_type)
+            X_train.append(img)
+            y_train.append(j)
+    X_train = np.array(X_train, dtype=np.float32)
+    X_train /= 255.0
+    return X_train, y_train
+
+# The data, split between train and test sets:
+x_train, y_train = load_train(224,224,3)
+print('x_train shape:', x_train.shape)
+print(x_train.shape[0], 'train samples')
+perm = permutation(len(y_train))
+x_train = x_train[perm]
+y_train = keras.utils.to_categorical(y_train, num_classes)
+y_train = y_train[perm]
+
+train_len = int(x_train.shape[0]*0.98)
+x_train, x_test = x_train[:train_len],x_train[train_len:]
+y_train, y_test = y_train[:train_len],y_train[train_len:]
+
+# initiate RMSprop optimizer
+
+from keras.applications.densenet import *
+from keras.applications.mobilenet_v2 import MobileNetV2
+#model = MobileNetV2(include_top=True,classes=10,weights=None,input_shape=(32,32,3))
+raw = DenseNet169(include_top=False,weights='imagenet',pooling='max',input_shape=(224,224,3))
+new_output = Dense(10,activation='softmax')(Dense(50,activation='swish')(Dropout(0.25)((raw.output))))
+model = Model(inputs=raw.input,outputs=new_output)
+# initiate RMSprop optimizer
+opt = keras.optimizers.Adam(lr=0.0002)
+
+# Let's train the model using RMSprop
+model.compile(loss='categorical_crossentropy',
+              optimizer=opt,
+              metrics=['accuracy'])
+es = keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0, patience=2, verbose=0, mode='auto', baseline=None, restore_best_weights=True)
+
+datagen = ImageDataGenerator(
+    rotation_range=15,
+    width_shift_range=0.1,
+    height_shift_range=0.1,
+    horizontal_flip=True,
+    )
+datagen.fit(x_train)
+model.fit_generator(datagen.flow(x_train, y_train, batch_size=batch_size),
+                    steps_per_epoch=x_train.shape[0] // batch_size,epochs=5,
+                    verbose=1,validation_data=(x_test,y_test),callbacks=[es])
+# Save model and weights
+#if not os.path.isdir(save_dir):
+#    os.makedirs(save_dir)
+#model_path = os.path.join(save_dir, model_name)
+#model.save(model_path)
+#print('Saved trained model at %s ' % model_path)
+from keras.applications.resnet_v2 import ResNet101V2
+#model = MobileNetV2(include_top=True,classes=10,weights=None,input_shape=(32,32,3))
+raw = ResNet101V2(include_top=False,weights='imagenet',pooling='avg',input_shape=(224,224,3))
+new_output = Dense(10,activation='softmax')(Dense(50,activation='relu')(Dropout(0.25)((raw.output))))
+model2 = Model(inputs=raw.input,outputs=new_output)
+# initiate RMSprop optimizer
+opt = keras.optimizers.Adam(lr=0.0002)
+
+# Let's train the model using RMSprop
+model2.compile(loss='categorical_crossentropy',
+              optimizer=opt,
+              metrics=['accuracy'])
+es = keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0, patience=2, verbose=0, mode='auto', baseline=None, restore_best_weights=True)
+
+datagen = ImageDataGenerator(
+    rotation_range=15,
+    width_shift_range=0.1,
+    height_shift_range=0.1,
+    horizontal_flip=True,
+    )
+datagen.fit(x_train)
+model2.fit_generator(datagen.flow(x_train, y_train, batch_size=batch_size),
+                    steps_per_epoch=x_train.shape[0] // batch_size,epochs=5,
+                    verbose=1,validation_data=(x_test,y_test),callbacks=[es])
+
+def load_test(img_rows, img_cols, color_type,model,model2):
+    print('Read test images')
+    path = os.path.join('..', 'input',  'test', '*.jpg')
+    files = glob.glob(path)
+    X_test = []
+    X_test_id = []
+    preds = []
+    total = 0
+    thr = math.floor(len(files)/10)
+    for fl in files:
+        flbase = os.path.basename(fl)
+        img = get_im(fl, img_rows, img_cols, color_type)
+        X_test.append(img)
+        X_test_id.append(flbase)
+        total += 1
+        if total % thr == 0:
+            print('Read {} images from {}'.format(total, len(files)))
+            
+            X_test = np.array(X_test, dtype=np.float32)
+            X_test /= 255.0
+            results = 0.5*model.predict(X_test, batch_size=64, verbose=1)
+            results += 0.5*model2.predict(X_test, batch_size=64, verbose=1)
+            #print("model predict")
+            #print(results)
+            for e in results:
+                preds.append(e)
+            #print(preds)
+            X_test = []
+    #after 10 times, there are still a few images need to process
+    X_test = np.array(X_test, dtype=np.float32)
+    X_test /= 255.0
+    results = 0.5*model.predict(X_test, batch_size=batch_size, verbose=1)
+    results += 0.5*model2.predict(X_test, batch_size=batch_size, verbose=1)
+    for e in results:
+        preds.append(e)
+    return  X_test_id,preds
+
+def create_submission(predictions, test_id, info):
+    result1 = pd.DataFrame(predictions, columns=['c0', 'c1', 'c2', 'c3',
+                                                 'c4', 'c5', 'c6', 'c7',
+                                                 'c8', 'c9'])
+    result1.loc[:, 'img'] = pd.Series(test_id, index=result1.index)
+    now = datetime.datetime.now()
+    if not os.path.isdir('subm'):
+        os.mkdir('subm')
+    suffix = info + '_' + str(now.strftime("%Y-%m-%d-%H-%M"))
+    sub_file = os.path.join('subm', 'submission_' + suffix + '.csv')
+    result1.to_csv(sub_file, index=False)
+
+test_id,test_prediction = load_test(224,224,3,model,model2)
+#test_prediction = model.predict(x_test, batch_size=64, verbose=1)
+
+info_string = 'blend'
+
+create_submission(test_prediction , test_id, info_string)
+
